@@ -1,34 +1,5 @@
-# Verificación del Set de Instrucciones STX4 (RTM32)
+# Verificación del Set de Instrucciones Nuevas(RTM32) Manuel Garcia de la Vega
 
-## Metodología
-
-A diferencia de un análisis puramente teórico sobre el manual, este set de pruebas fue **ejecutado y verificado contra el emulador real** `rtm32` (versión `RTM32-0.5`, provisto junto al manual). El binario es un ELF de Linux x86-64, por lo que se levantó en un contenedor Docker (`ubuntu:22.04`) para poder correrlo:
-
-```bash
-docker run -d --name rtm32test -v "$PWD":/work -w /work ubuntu:22.04 sleep infinity
-docker exec rtm32test bash -c "apt-get update && apt-get install -y python3 netcat-openbsd telnet"
-docker exec rtm32test chmod +x /work/rtm32
-docker exec -d rtm32test bash -c "cd /work && ./rtm32 -d dbg -m 4K > /tmp/rtm32.log 2>&1"
-```
-
-El emulador expone un debugger interactivo por telnet (puerto 4444) con comandos `set`, `step`, `registers`, `dump`, `reset`, etc. Se automatizó la interacción con un cliente Python (socket + parseo del protocolo telnet) que permite:
-
-1. Inyectar valores arbitrarios directamente en los registros (`set r<n> 0x...`).
-2. Inyectar la palabra de 32 bits de cualquier instrucción directamente en memoria (`set [0x<addr>] 0x...`), calculada con un ensamblador propio en Python que respeta al bit los formatos R/I/L/J descriptos en la Sección 1.2 del manual.
-3. Ejecutar paso a paso (`step`) y volcar el estado completo de registros, PC, PSW/flags y registros especiales (`registers`).
-4. Inspeccionar memoria cruda (`dump hex <addr> +N`) para confirmar el resultado de accesos a memoria, incluyendo el **orden de bytes real** (little-endian, confirmado empíricamente, ver Caso 10).
-
-Cada caso fue diseñado con valores de estrés (overflow con signo, patrones `0xAA`/`0x55` complementarios, extremos `INT_MIN`/`INT_MAX`, direcciones no alineadas, división por cero, etc.) en lugar de valores triviales, para forzar los bordes reales de la ALU y de las unidades de load/store.
-
-**Nota general sobre banderas:** en absolutamente ningún caso probado (incluyendo overflows con signo en `ADD`/`SUB`, división por cero, excepciones de alineación) el campo `Flags` del debugger (`Mode: KERNEL | Flags: [-----]`) cambió de su valor por defecto `-----`. Se documenta esto explícitamente en cada caso como "sin cambio" en lugar de repetir la advertencia; se profundiza en la sección de Hallazgos.
-
----
-
-## Índice de instrucciones cubiertas
-
-Aritmético-inmediatas: `ADDI` · Saltos incondicionales: `J`, `JAL`, `JR`, `JALR` · Lógicas inmediatas: `ANDI`/`ANDIH`, `ORI`/`ORIH`, `XORI`/`XORIH`, `LUI` · Memoria: `LW`/`SW`, `LH`/`LHU`/`SH`, `LB`/`LBU`/`SB`, `LWX`/`LHX`/`LHUX`/`LBX`/`LBUX` · Saltos condicionales: `BEQ`, `BNE`, `BLT`, `BGT`, `BLE`, `BGE` · Comparación: `SLTI`, `SLTIU`, `SLT`, `SLTU` · Desplazamientos: `SLL`, `SRL`, `SRA`, `SLLR`, `SRLR`, `SRAR` · Lógicas registro-registro: `AND`, `OR`, `XOR`, `NOR` · Aritmética registro-registro: `ADD`, `SUB` · Multiplicación/división: `MUL`, `MULH`, `MULHU`, `DIV`, `DIVU`, `REST`, `RESTU` · Especiales/excepciones: `CFS`, `CTS`, `TRAP`, `RFT` · Registro `$zero`.
-
----
 
 ## 1. Aritmético-lógicas registro-registro
 
@@ -577,7 +548,3 @@ Resumen consolidado de discrepancias entre el manual `rtm32.pdf` y el comportami
 | H9 | Todas las aritméticas | Ningún caso (incluyendo overflows de `ADD`/`SUB`/`DIV`) modificó el campo `Flags` del debugger (`Mode: KERNEL \| Flags: [-----]`), pese a que el manual describe `$psw` conteniendo "banderas aritméticas". | Informativo |
 
 ---
-
-## Reproducibilidad
-
-Todo el harness (ensamblador Python por formato R/I/L/J, cliente del protocolo telnet del debugger, y los ~34 casos de prueba) puede volver a ejecutarse levantando el contenedor Docker indicado en la Metodología y corriendo los scripts contra `rtm32 -d dbg -m 4K`. Cada caso usa `reset` + `set pc 0x0` como punto de partida limpio de registros (la memoria **no** se limpia con `reset`, por lo que cada caso especifica explícitamente todas las palabras de memoria que necesita).
