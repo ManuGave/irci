@@ -9,3 +9,5 @@ RS: Un valor que viene de un registro (en tu caso, un Input de 16 bits).
 Immediate: Un valor constante (un número "fijo") que viene directamente de la instrucción.
 
 Dato importante: Aunque se llame "Unsigned" (sin signo), en arquitecturas como MIPS, el valor inmediato suele extenderse con signo para permitir restas, pero el operador no genera una excepción si hay desbordamiento (overflow). Para tu circuito en CircuitVerse, simplemente lo trataremos como una suma binaria estándar.
+
+Ademas de eso, agregue las pruebas que se hicieron de testeo para el procesador adjunto en los materiales de clase y una ROM, para correr un hola_mundo basico.
