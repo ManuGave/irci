@@ -1,0 +1,165 @@
+// estadisticas.rtm
+// Dado un arreglo de 10 numeros, calcula su suma, maximo, minimo y promedio,
+// e imprime los resultados en decimal por la UART.
+//
+// Convencion usada:
+//   - Argumentos en $a0, $a1. Resultado de las funciones en $a0.
+//   - $sX son callee-saved: si una funcion los usa, los guarda en el stack.
+//   - $tX son temporales: cualquier funcion los puede pisar.
+
+.section ".data"
+	numeros:     .word 15 42 8 27 90 3 61 19 34 11
+	cantidad:    .word 10
+
+	txt_suma:     .asciiz "Suma:     "
+	txt_maximo:   .asciiz "Maximo:   "
+	txt_minimo:   .asciiz "Minimo:   "
+	txt_promedio: .asciiz "Promedio: "
+
+.section ".text"
+	addi $sp, $zero, 0xFFC
+
+	// $s0 = puntero al arreglo, $s1 = cantidad de elementos
+	orh $s0, $zero, .hi16 numeros
+	ori $s0, $s0,   .lo16 numeros
+	lw  $s1, cantidad($zero)
+
+	// ---- Suma ----
+	addi $a0, $s0, 0
+	addi $a1, $s1, 0
+	jal sumar
+	addi $s2, $a0, 0              // $s2 = suma (la reusamos para el promedio)
+
+	orh $a0, $zero, .hi16 txt_suma
+	ori $a0, $a0,   .lo16 txt_suma
+	jal imprimir_asciiz
+	addi $a0, $s2, 0
+	jal imprimir_numero_ln
+
+	// ---- Maximo ----
+	addi $a0, $s0, 0
+	addi $a1, $s1, 0
+	jal maximo
+	addi $s3, $a0, 0
+
+	orh $a0, $zero, .hi16 txt_maximo
+	ori $a0, $a0,   .lo16 txt_maximo
+	jal imprimir_asciiz
+	addi $a0, $s3, 0
+	jal imprimir_numero_ln
+
+	// ---- Minimo ----
+	addi $a0, $s0, 0
+	addi $a1, $s1, 0
+	jal minimo
+	addi $s3, $a0, 0
+
+	orh $a0, $zero, .hi16 txt_minimo
+	ori $a0, $a0,   .lo16 txt_minimo
+	jal imprimir_asciiz
+	addi $a0, $s3, 0
+	jal imprimir_numero_ln
+
+	// ---- Promedio (division entera) ----
+	divu $s3, $s2, $s1
+
+	orh $a0, $zero, .hi16 txt_promedio
+	ori $a0, $a0,   .lo16 txt_promedio
+	jal imprimir_asciiz
+	addi $a0, $s3, 0
+	jal imprimir_numero_ln
+
+	// No hay HALT: frenamos con una excepcion no definida (Core Exception 6)
+	trap 1
+
+
+// sumar($a0 = puntero, $a1 = cantidad) -> $a0 = suma
+sumar:
+	addi $t0, $zero, 0            // acumulador
+sumar.bucle:
+	beq  $a1, $zero, sumar.fin
+	lw   $t1, 0($a0)
+	add  $t0, $t0, $t1
+	addi $a0, $a0, 4
+	addi $a1, $a1, -1
+	j sumar.bucle
+sumar.fin:
+	addi $a0, $t0, 0
+	jr $ra, 0
+
+
+// maximo($a0 = puntero, $a1 = cantidad >= 1) -> $a0 = mayor elemento
+maximo:
+	lw   $t0, 0($a0)              // el primero es el maximo provisorio
+maximo.bucle:
+	addi $a0, $a0, 4
+	addi $a1, $a1, -1
+	beq  $a1, $zero, maximo.fin
+	lw   $t1, 0($a0)
+	slt  $t2, $t0, $t1            // $t2 = (maximo < actual)
+	beq  $t2, $zero, maximo.bucle
+	addi $t0, $t1, 0              // encontramos uno mayor
+	j maximo.bucle
+maximo.fin:
+	addi $a0, $t0, 0
+	jr $ra, 0
+
+
+// minimo($a0 = puntero, $a1 = cantidad >= 1) -> $a0 = menor elemento
+minimo:
+	lw   $t0, 0($a0)
+minimo.bucle:
+	addi $a0, $a0, 4
+	addi $a1, $a1, -1
+	beq  $a1, $zero, minimo.fin
+	lw   $t1, 0($a0)
+	slt  $t2, $t1, $t0            // $t2 = (actual < minimo)
+	beq  $t2, $zero, minimo.bucle
+	addi $t0, $t1, 0
+	j minimo.bucle
+minimo.fin:
+	addi $a0, $t0, 0
+	jr $ra, 0
+
+
+// imprimir_numero_ln($a0 = numero sin signo)
+// Imprime el numero en decimal seguido de CRLF.
+// Los digitos salen de derecha a izquierda (n % 10), asi que los apilamos
+// en el stack y despues los imprimimos desapilando.
+imprimir_numero_ln:
+	addi $t0, $zero, 10           // divisor
+	addi $t1, $zero, 0            // cantidad de digitos apilados
+	addi $t3, $zero, -0x100       // direccion de la UART
+imprimir_numero_ln.dividir:
+	restu $t2, $a0, $t0           // digito = n % 10
+	divu  $a0, $a0, $t0           // n = n / 10
+	addi  $t2, $t2, '0'           // a ASCII
+	addi  $sp, $sp, -4
+	sw    $t2, 0($sp)
+	addi  $t1, $t1, 1
+	bne   $a0, $zero, imprimir_numero_ln.dividir   // si n == 0 al entrar, igual imprime "0"
+imprimir_numero_ln.imprimir:
+	lw    $t2, 0($sp)
+	addi  $sp, $sp, 4
+	sb    $t2, 0($t3)
+	addi  $t1, $t1, -1
+	bne   $t1, $zero, imprimir_numero_ln.imprimir
+
+	addi $t2, $zero, '\r'
+	sb   $t2, 0($t3)
+	addi $t2, $zero, '\n'
+	sb   $t2, 0($t3)
+	jr $ra, 0
+
+
+// imprimir_asciiz($a0 = puntero a string terminada en 0)
+imprimir_asciiz:
+	addi $t0, $zero, -0x100       // direccion de la UART
+imprimir_asciiz.bucle:
+	lbu  $t1, 0($a0)
+	beq  $t1, $zero, imprimir_asciiz.fin
+	sb   $t1, 0($t0)
+	addi $a0, $a0, 1
+	j imprimir_asciiz.bucle
+imprimir_asciiz.fin:
+	jr $ra, 0
